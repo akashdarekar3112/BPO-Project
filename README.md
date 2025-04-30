@@ -1,5 +1,3 @@
-DivasAI
-
 ## Getting Started
 
 Follow these instructions to set up and run the project on your local machine.
@@ -57,7 +55,7 @@ Make sure you have the following installed:
 6. Perform initial migrations:
 
     ```bash
-    python manage.py makemigrations dash_app
+    python manage.py makemigrations
     ```
 
     ```bash
