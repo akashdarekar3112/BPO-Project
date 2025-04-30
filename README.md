@@ -14,7 +14,7 @@ Make sure you have the following installed:
 1. Clone the repository:
 
    ```bash
-   git clonehttps://github.com/akashdarekar3112/BPO-Project.git
+   git clone https://github.com/akashdarekar3112/BPO-Project.git
    ```
 
 2. Navigate to the project directory:

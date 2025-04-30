@@ -10,6 +10,9 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 import stripe
 from django.db.models import Q
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.core.cache import cache
 
 from users import stripe_module
 from users.models import CustomUser, ProviderProfile, SeekerProfile, SubscriptionPlan
@@ -17,7 +20,8 @@ from users.send_email import send_payment_failed_email, send_payment_success_ema
 from users.stripe_config import create_stripe_customer
 from users.swagger_decorators import (
                     checkout_payment, create_payment_plan_docs, fetch_subscription_plans_docs, get_user_profile,
-                    matched_users_swagger, set_role_swagger, user_profile_swagger, users_login, users_register, verify_email
+                    matched_users_swagger, set_role_swagger, user_profile_swagger, users_login, users_register, verify_email,
+                    resend_verification_email
                     )
 from .serializers import ProviderProfileSerializer, SeekerProfileSerializer, SubscriptionPlanSerializer, UserRegistrationSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -30,6 +34,7 @@ class CheckHealth(APIView):
     def get(self, request):
         return Response({"message":"Backend is working fine"}, status=status.HTTP_200_OK)
 
+@method_decorator(csrf_exempt, name='dispatch')
 class UserRegistrationView(APIView):
 
     permission_classes = [AllowAny] 
@@ -111,6 +116,7 @@ class LoginAPIView(APIView):
                 'message': 'Login successful',
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
+                'email_verified': user.is_email_verified
             }, status=status.HTTP_200_OK)
         else:
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_400_BAD_REQUEST)
@@ -186,47 +192,170 @@ class UserProfileView(APIView):
 
 class MatchView(APIView):
     permission_classes = [IsAuthenticated]
+    
+    def _calculate_match_score(self, seeker_data, provider_data):
+        """Calculate a match score between seeker and provider"""
+        score = 0
+        
+        # Industry match (exact match gives higher score)
+        if seeker_data['industry'] in provider_data['service_types']:
+            score += 50
+        
+        # Location match
+        if seeker_data['location'] in provider_data['geoserved']:
+            score += 50
+            
+        return score
+
+    def _get_cache_key(self, user_id, industry=None, location=None):
+        """Generate a cache key for match results"""
+        if industry and location:
+            return f"matches_seeker_{user_id}_{industry}_{location}"
+        return f"matches_provider_{user_id}"
 
     @matched_users_swagger()
     def get(self, request):
         user = request.user
+        is_ml_endpoint = 'ml/match' in request.path
+        cache_key = None
 
         if user.role == 'seeker':
-
             try:
                 seeker_profile = SeekerProfile.objects.get(user=user)
             except SeekerProfile.DoesNotExist:
                 return Response({'error': 'Seeker profile not found.'}, status=404)
 
-            industry = request.query_params.get('industry',)
-            location = request.query_params.get('location',)
+            industry = request.query_params.get('industry')
+            location = request.query_params.get('location')
 
-            providers = ProviderProfile.objects.filter(
-                Q(service_types__icontains=industry) | Q(geoserved__icontains=location)
+            if not industry or not location:
+                return Response({
+                    'error': 'Both industry and location parameters are required.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Generate cache key for this query
+            cache_key = self._get_cache_key(user.id, industry, location)
+            
+            # Try to get results from cache
+            cached_results = cache.get(cache_key)
+            if cached_results and not is_ml_endpoint:
+                return Response(cached_results)
+
+            # Basic rule-based matching
+            if not is_ml_endpoint:
+                providers = ProviderProfile.objects.filter(
+                    Q(service_types__contains=[industry]) |  # Exact match
+                    Q(service_types__icontains=industry)     # Partial match
+                ).filter(
+                    Q(geoserved__contains=[location]) |     # Exact match
+                    Q(geoserved__icontains=location)        # Partial match
+                )
                 
-            )
+                # Calculate scores and prepare response
+                matches = []
+                for provider in providers:
+                    score = self._calculate_match_score(
+                        {'industry': industry, 'location': location},
+                        {'service_types': provider.service_types, 'geoserved': provider.geoserved}
+                    )
+                    provider_data = ProviderProfileSerializer(provider).data
+                    provider_data['match_score'] = score
+                    provider_data['email'] = provider.user.email
+                    matches.append(provider_data)
+                
+                # Sort by match score
+                matches = sorted(matches, key=lambda x: x['match_score'], reverse=True)
+                
+            else:
+                # ML-based matching (currently stubbed)
+                # Returns same results as rule-based but marks as ML
+                providers = ProviderProfile.objects.filter(
+                    service_types__contains=[industry],
+                    geoserved__contains=[location]
+                )
+                matches = []
+                for provider in providers:
+                    provider_data = ProviderProfileSerializer(provider).data
+                    provider_data['email'] = provider.user.email
+                    matches.append(provider_data)
 
-            serializer = ProviderProfileSerializer(providers, many=True)
-            return Response({'matches': serializer.data})
+            response_data = {
+                'matches': matches,
+                'matching_type': 'ml' if is_ml_endpoint else 'rule-based',
+                'total_matches': len(matches)
+            }
+
+            # Cache the results for non-ML queries
+            if not is_ml_endpoint:
+                cache.set(cache_key, response_data, timeout=300)  # Cache for 5 minutes
+
+            return Response(response_data)
         
-        if user.role == 'provider':
+        elif user.role == 'provider':
             try:
                 provider_profile = ProviderProfile.objects.get(user=user)
             except ProviderProfile.DoesNotExist:
                 return Response({'error': 'Provider profile not found.'}, status=404)
 
-            industries = provider_profile.service_types  
-            locations = provider_profile.geoserved      
+            # Generate cache key for provider
+            cache_key = self._get_cache_key(user.id)
+            
+            # Try to get results from cache
+            cached_results = cache.get(cache_key)
+            if cached_results and not is_ml_endpoint:
+                return Response(cached_results)
 
-            seekers = SeekerProfile.objects.filter(
-                industry__in=industries,
-                location__in=locations
-            )
+            if not is_ml_endpoint:
+                # Enhanced rule-based matching for providers
+                seekers = SeekerProfile.objects.filter(
+                    Q(industry__in=provider_profile.service_types) |
+                    Q(location__in=provider_profile.geoserved)
+                )
+                
+                # Calculate scores and prepare response
+                matches = []
+                for seeker in seekers:
+                    score = self._calculate_match_score(
+                        {'industry': seeker.industry, 'location': seeker.location},
+                        {'service_types': provider_profile.service_types, 'geoserved': provider_profile.geoserved}
+                    )
+                    seeker_data = SeekerProfileSerializer(seeker).data
+                    seeker_data['match_score'] = score
+                    seeker_data['email'] = seeker.user.email
+                    matches.append(seeker_data)
+                
+                # Sort by match score
+                matches = sorted(matches, key=lambda x: x['match_score'], reverse=True)
+                
+            else:
+                # ML-based matching (stubbed)
+                seekers = SeekerProfile.objects.filter(
+                    industry__in=provider_profile.service_types,
+                    location__in=provider_profile.geoserved
+                )
+                matches = []
+                for seeker in seekers:
+                    seeker_data = SeekerProfileSerializer(seeker).data
+                    seeker_data['email'] = seeker.user.email
+                    matches.append(seeker_data)
 
-            serializer = SeekerProfileSerializer(seekers, many=True)
-            return Response({'matches': serializer.data})
+            response_data = {
+                'matches': matches,
+                'matching_type': 'ml' if is_ml_endpoint else 'rule-based',
+                'total_matches': len(matches)
+            }
+
+            # Cache the results for non-ML queries
+            if not is_ml_endpoint:
+                cache.set(cache_key, response_data, timeout=300)  # Cache for 5 minutes
+
+            return Response(response_data)
         
-        
+        return Response({
+            'error': 'Invalid user role'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
 class SubscriptionPlanAPIView(APIView):
 
 
@@ -312,6 +441,7 @@ class CreateCheckoutSessionView(APIView):
             return Response({'error': str(e)}, status=500)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class StripeWebhookAPIView(APIView):
     permission_classes = [AllowAny]
 
@@ -404,3 +534,33 @@ class StripeWebhookAPIView(APIView):
             logger.error(f"Error sending payment email: {traceback.format_exc()}")
 
         return Response({"message": "Success"}, status=status.HTTP_200_OK)
+
+class ResendVerificationEmailView(APIView):
+    permission_classes = [AllowAny]
+
+    @resend_verification_email()
+    def post(self, request):
+        email = request.data.get('email')
+        
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = CustomUser.objects.get(email=email)
+            
+            if user.is_email_verified:
+                return Response({"message": "Email is already verified"}, status=status.HTTP_200_OK)
+            
+            # Resend verification email
+            send_verification_email(user)
+            
+            return Response({"message": "Verification email has been resent. Please check your inbox."}, 
+                          status=status.HTTP_200_OK)
+            
+        except CustomUser.DoesNotExist:
+            return Response({"error": "User with this email does not exist"}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error resending verification email: {str(e)}")
+            return Response({"error": "Failed to resend verification email"}, 
+                          status=status.HTTP_500_INTERNAL_SERVER_ERROR)

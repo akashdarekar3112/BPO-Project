@@ -19,25 +19,36 @@ from django.urls import path, include
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
+from drf_yasg.generators import OpenAPISchemaGenerator
+
+
+class BearerTokenSchemaGenerator(OpenAPISchemaGenerator):
+    def get_security_definitions(self):
+        security_definitions = super().get_security_definitions()
+        security_definitions['Bearer'] = {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+        return security_definitions
 
 
 schema_view = get_schema_view(
-   openapi.Info(
-      title="BPO Project API",
-      default_version='v1',
-      description="API documentation for your Django project",
-      terms_of_service="https://yourdomain.com/terms/",
-      contact=openapi.Contact(email="contact@yourdomain.com"),
-      license=openapi.License(name="BSD License"),
-   ),
-   public=True,
-   permission_classes=[permissions.AllowAny],
+    openapi.Info(
+        title="BPO Project API",
+        default_version='v1',
+        description="API documentation for your Django project. Use the login endpoint to get a token and authorize.",
+        terms_of_service="https://yourdomain.com/terms/",
+        contact=openapi.Contact(email="contact@yourdomain.com"),
+        license=openapi.License(name="BSD License"),
+    ),
+    public=True,
+    permission_classes=(permissions.AllowAny,),
+    generator_class=BearerTokenSchemaGenerator,
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/users/', include('users.urls')), 
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0),
-         name='schema-swagger-ui'),
-
+    path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
 ]

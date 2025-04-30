@@ -188,11 +188,98 @@ def get_user_profile():
 # Custom Swagger decorator for matched users endpoint
 def matched_users_swagger():
     return swagger_auto_schema(
-        operation_description="Get matched users based on industry and location",
+        operation_description="""
+        Get matched users based on industry and location.
+        
+        For Seekers:
+        - Returns matching providers based on industry and location
+        - Both parameters are required
+        - Matches against provider's service_types and geoserved fields
+        - Returns match scores (0-100) based on exact and partial matches
+        
+        For Providers:
+        - Returns matching seekers based on provider's service_types and geoserved
+        - No query parameters needed as it uses provider's profile
+        - Returns match scores (0-100) based on exact and partial matches
+        
+        ML Endpoint (/ml/match):
+        - Same interface but uses ML-enhanced matching logic
+        - Currently stubbed to return same results as rule-based matching
+        
+        Response includes:
+        - matches: List of matched profiles with match scores
+        - matching_type: 'rule-based' or 'ml'
+        - total_matches: Total number of matches found
+        
+        Results are cached for 5 minutes for better performance.
+        """,
         manual_parameters=[
-            openapi.Parameter('industry', openapi.IN_QUERY, type=openapi.TYPE_STRING),
-            openapi.Parameter('location', openapi.IN_QUERY, type=openapi.TYPE_STRING),
+            openapi.Parameter(
+                'industry',
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description='Industry to match (required for seekers)',
+                required=False
+            ),
+            openapi.Parameter(
+                'location',
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description='Location to match (required for seekers)',
+                required=False
+            ),
         ],
+        responses={
+            200: openapi.Response(
+                description='Successful match response',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'matches': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'match_score': openapi.Schema(
+                                        type=openapi.TYPE_INTEGER,
+                                        description='Match score from 0-100'
+                                    ),
+                                    'industry': openapi.Schema(
+                                        type=openapi.TYPE_STRING,
+                                        description='For seeker profiles'
+                                    ),
+                                    'location': openapi.Schema(
+                                        type=openapi.TYPE_STRING,
+                                        description='For seeker profiles'
+                                    ),
+                                    'service_types': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description='For provider profiles'
+                                    ),
+                                    'geoserved': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY,
+                                        items=openapi.Schema(type=openapi.TYPE_STRING),
+                                        description='For provider profiles'
+                                    ),
+                                }
+                            )
+                        ),
+                        'matching_type': openapi.Schema(
+                            type=openapi.TYPE_STRING,
+                            enum=['rule-based', 'ml']
+                        ),
+                        'total_matches': openapi.Schema(
+                            type=openapi.TYPE_INTEGER,
+                            description='Total number of matches found'
+                        )
+                    }
+                )
+            ),
+            400: 'Bad Request - Missing required parameters or invalid role',
+            404: 'Not Found - Profile not found'
+        },
         tags=["Matches"]
     )
 
@@ -236,4 +323,37 @@ def checkout_payment():
         ),
         responses={200: "Subscription created successfully", 400: "Invalid input"},
         tags=["Subscription"]
+    )
+
+def resend_verification_email():
+    return swagger_auto_schema(
+        operation_description="Resend verification email to user",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, description="User's email address"),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Verification email resent successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description="Success message"),
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad request, missing email or email already verified"
+            ),
+            404: openapi.Response(
+                description="User not found"
+            ),
+            500: openapi.Response(
+                description="Internal server error"
+            ),
+        },
+        tags=["Auth"]
     )

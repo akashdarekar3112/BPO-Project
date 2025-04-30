@@ -28,24 +28,30 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
 class SeekerProfileSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()
+    match_score = serializers.IntegerField(required=False)
 
     class Meta:
         model = SeekerProfile
-        fields = ['industry', 'location', 'rating_report_url']
+        fields = ['industry', 'location', 'rating_report_url', 'email', 'match_score']
 
     def get_email(self, obj):
-        return obj.user.email
+        if isinstance(obj, dict):
+            return obj.get('email')
+        return obj.user.email if obj.user else None
 
 
 class ProviderProfileSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()
+    match_score = serializers.IntegerField(required=False)
 
     class Meta:
         model = ProviderProfile
-        fields = ['user', 'email', 'service_types', 'geoserved']
+        fields = ['email', 'service_types', 'geoserved', 'match_score']
 
     def get_email(self, obj):
-        return obj.user.email
+        if isinstance(obj, dict):
+            return obj.get('email')
+        return obj.user.email if obj.user else None
     
 
 
