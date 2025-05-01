@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_yasg',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'users',
     'django.contrib.admin',
@@ -68,6 +69,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://192.168.0.125:5173",
     "http://192.168.0.68:8000",
+    "http://localhost:9000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -116,6 +118,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://192.168.0.68:8000",
     "http://localhost:5173",
     "http://192.168.0.125:5173",
+    "http://localhost:9000",
 ]
 
 # Additional security settings
@@ -173,13 +176,16 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': 'secret_key',  # Use a secret key here
+    'SIGNING_KEY': 'secret_key',  # replace or use settings.SECRET_KEY
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
     'JWT_ID': 'jwt_id',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_BLACKLIST_ENABLED': True,
 }
 
 SWAGGER_SETTINGS = {
@@ -201,7 +207,7 @@ DATABASES = {
         'NAME': os.getenv('POSTGRES_DB', 'postgres'),
         'USER': os.getenv('POSTGRES_USER', 'postgres'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'postgres'),
-        'HOST': os.getenv('POSTGRES_HOST', 'db'),  # Use 'db' as hostname which is our service name in docker-compose
+        'HOST': os.getenv('POSTGRES_HOST', 'db'),  
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
     }
 }

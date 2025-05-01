@@ -18,7 +18,7 @@ def send_verification_email(user):
     }
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
-    verification_link = f"http://192.168.0.125:5173/verify-email?token={token}"
+    verification_link = f"http://localhost:5173/verify-email?token={token}"
     print(verification_link, "==================")
 
     # Create HTML email content

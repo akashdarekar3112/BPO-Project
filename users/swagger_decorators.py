@@ -182,8 +182,30 @@ def user_profile_swagger():
 
 def get_user_profile():
     return swagger_auto_schema(
-        operation_description="Get user profile.",
-        responses={200: "User profile details."},
+        operation_description="Get user profile with role-specific information.",
+        responses={
+            200: openapi.Response(
+                description="User profile details",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                        'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING),
+                        'is_email_verified': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        'stripe_customer_id': openapi.Schema(type=openapi.TYPE_STRING),
+                        'industry': openapi.Schema(type=openapi.TYPE_STRING, description='For seeker profiles'),
+                        'location': openapi.Schema(type=openapi.TYPE_STRING, description='For seeker profiles'),
+                        'rating_report_url': openapi.Schema(type=openapi.TYPE_STRING, description='For seeker profiles'),
+                        'service_types': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), description='For provider profiles'),
+                        'geoserved': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING), description='For provider profiles'),
+                        'subscription_tier': openapi.Schema(type=openapi.TYPE_STRING, description='For provider profiles')
+                    }
+                )
+            )
+        },
         tags=["User Profile"]
     )
 
@@ -210,7 +232,7 @@ def matched_users_swagger():
         - Currently stubbed to return same results as rule-based matching
         
         Response includes:
-        - matches: List of matched profiles with match scores
+        - matches: List of matched profiles with match scores and user details
         - matching_type: 'rule-based' or 'ml'
         - total_matches: Total number of matches found
         
@@ -244,6 +266,8 @@ def matched_users_swagger():
                                 type=openapi.TYPE_OBJECT,
                                 properties={
                                     'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'last_name': openapi.Schema(type=openapi.TYPE_STRING),
                                     'match_score': openapi.Schema(
                                         type=openapi.TYPE_INTEGER,
                                         description='Match score from 0-100'
@@ -357,6 +381,51 @@ def resend_verification_email():
             500: openapi.Response(
                 description="Internal server error"
             ),
+        },
+        tags=["Auth"]
+    )
+
+def logout_swagger():
+    return swagger_auto_schema(
+        operation_description="Logout endpoint that blacklists the refresh token",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['refresh'],
+            properties={
+                'refresh': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="The refresh token to be blacklisted"
+                )
+            }
+        ),
+        responses={
+            205: openapi.Response(
+                description="Successfully logged out",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'detail': openapi.Schema(
+                            type=openapi.TYPE_STRING,
+                            description="Success message"
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad Request - Invalid refresh token or other error",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(
+                            type=openapi.TYPE_STRING,
+                            description="Error message"
+                        )
+                    }
+                )
+            ),
+            401: openapi.Response(
+                description="Unauthorized - User not authenticated"
+            )
         },
         tags=["Auth"]
     )

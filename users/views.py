@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 import stripe
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
@@ -21,7 +21,7 @@ from users.stripe_config import create_stripe_customer
 from users.swagger_decorators import (
                     checkout_payment, create_payment_plan_docs, fetch_subscription_plans_docs, get_user_profile,
                     matched_users_swagger, set_role_swagger, user_profile_swagger, users_login, users_register, verify_email,
-                    resend_verification_email
+                    resend_verification_email, logout_swagger
                     )
 from .serializers import ProviderProfileSerializer, SeekerProfileSerializer, SubscriptionPlanSerializer, UserRegistrationSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -177,6 +177,7 @@ class UserProfileView(APIView):
     def get(self, request):
         user = request.user  
         
+        # Base user data
         user_data = {
             "id": user.id,
             "email": user.email,
@@ -184,9 +185,27 @@ class UserProfileView(APIView):
             "last_name": user.last_name,
             "role": user.role,
             "is_email_verified": user.is_email_verified,
-            "password": user.password,
             "stripe_customer_id": user.stripe_customer_id
         }
+
+        # Add role-specific profile data
+        try:
+            if user.role == 'seeker':
+                seeker_profile = SeekerProfile.objects.get(user=user)
+                user_data.update({
+                    "industry": seeker_profile.industry,
+                    "location": seeker_profile.location,
+                    "rating_report_url": seeker_profile.rating_report_url
+                })
+            elif user.role == 'provider':
+                provider_profile = ProviderProfile.objects.get(user=user)
+                user_data.update({
+                    "service_types": provider_profile.service_types,
+                    "geoserved": provider_profile.geoserved,
+                    "subscription_tier": provider_profile.subscription_tier
+                })
+        except (SeekerProfile.DoesNotExist, ProviderProfile.DoesNotExist):
+            pass  # Profile doesn't exist yet
 
         return Response(user_data, status=status.HTTP_200_OK)
 
@@ -262,6 +281,8 @@ class MatchView(APIView):
                     provider_data = ProviderProfileSerializer(provider).data
                     provider_data['match_score'] = score
                     provider_data['email'] = provider.user.email
+                    provider_data['first_name'] = provider.user.first_name
+                    provider_data['last_name'] = provider.user.last_name
                     matches.append(provider_data)
                 
                 # Sort by match score
@@ -278,6 +299,8 @@ class MatchView(APIView):
                 for provider in providers:
                     provider_data = ProviderProfileSerializer(provider).data
                     provider_data['email'] = provider.user.email
+                    provider_data['first_name'] = provider.user.first_name
+                    provider_data['last_name'] = provider.user.last_name
                     matches.append(provider_data)
 
             response_data = {
@@ -323,6 +346,8 @@ class MatchView(APIView):
                     seeker_data = SeekerProfileSerializer(seeker).data
                     seeker_data['match_score'] = score
                     seeker_data['email'] = seeker.user.email
+                    seeker_data['first_name'] = seeker.user.first_name
+                    seeker_data['last_name'] = seeker.user.last_name
                     matches.append(seeker_data)
                 
                 # Sort by match score
@@ -338,6 +363,8 @@ class MatchView(APIView):
                 for seeker in seekers:
                     seeker_data = SeekerProfileSerializer(seeker).data
                     seeker_data['email'] = seeker.user.email
+                    seeker_data['first_name'] = seeker.user.first_name
+                    seeker_data['last_name'] = seeker.user.last_name
                     matches.append(seeker_data)
 
             response_data = {
@@ -433,8 +460,8 @@ class CreateCheckoutSessionView(APIView):
                     'quantity': 1,
                 }],
                 mode='payment' if payment_type == 'one_time' else 'subscription',
-                success_url='http://127.0.0.1:8000/success?session_id={CHECKOUT_SESSION_ID}',
-                cancel_url='http://127.0.0.1:8000/cancel/',
+                success_url='http://localhost:5173/success?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url='http://localhost:5173/failure/',
 
             )
             return Response({'checkout_url': session.url})
@@ -565,3 +592,16 @@ class ResendVerificationEmailView(APIView):
             logger.error(f"Error resending verification email: {str(e)}")
             return Response({"error": "Failed to resend verification email"}, 
                           status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @logout_swagger()
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response({"detail": "Successfully logged out."}, status=status.HTTP_205_RESET_CONTENT)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
