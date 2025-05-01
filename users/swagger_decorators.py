@@ -62,7 +62,10 @@ def users_login():
                     type=openapi.TYPE_OBJECT,
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING, description="Login status message"),
-                        'token': openapi.Schema(type=openapi.TYPE_STRING, description="Authentication token")
+                        'access': openapi.Schema(type=openapi.TYPE_STRING, description="JWT access token"),
+                        'refresh': openapi.Schema(type=openapi.TYPE_STRING, description="JWT refresh token"),
+                        'email_verified': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Email verification status"),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING, description="User's role (seeker/provider/admin/none)")
                     }
                 )
             ),

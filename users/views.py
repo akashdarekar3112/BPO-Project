@@ -116,7 +116,8 @@ class LoginAPIView(APIView):
                 'message': 'Login successful',
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
-                'email_verified': user.is_email_verified
+                'email_verified': user.is_email_verified,
+                'role': user.role
             }, status=status.HTTP_200_OK)
         else:
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_400_BAD_REQUEST)

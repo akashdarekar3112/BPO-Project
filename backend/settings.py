@@ -197,12 +197,12 @@ SWAGGER_SETTINGS = {
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',  
-        'NAME': 'postgres',
-        'USER': 'postgres',
-        'PASSWORD': 'Test@123',
-        'HOST': 'localhost',
-        'PORT': '5433',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('POSTGRES_DB', 'postgres'),
+        'USER': os.getenv('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        'HOST': os.getenv('POSTGRES_HOST', 'db'),  # Use 'db' as hostname which is our service name in docker-compose
+        'PORT': os.getenv('POSTGRES_PORT', '5432'),
     }
 }
 

@@ -16,7 +16,8 @@ starkbank-ecdsa==2.2.0
 stripe==12.0.1
 typing-extensions==4.13.2
 urllib3==2.2.3
-psycopg2==2.9.10
+psycopg2-binary==2.9.10
 bcrypt==3.2.0 #password hashing
 sendgrid==6.11.0
 python-dotenv==0.21.1
+drf-yasg==1.21.10
